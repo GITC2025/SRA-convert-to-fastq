@@ -177,16 +177,96 @@ NAAGAATTTCTTCAGGTTGAATTACCTAGAAGTTTGTCACTGACTTGTGTTCCTGAACTATGACACATGAATGTGTGGGC
 | SRR12539462_2.fastq (R2) | Actual cDNA transcript (gene expression data)                   | 91-150 bp |
 
 
-
 * _1.fastq has barcode/UMI
 * _2.fastq actual genomic sequence and quality score (Phred)
 * peek at Phred score to know if it's phred 33 or phred 64
 * this one has phred 33
 * https://people.duke.edu/~ccc14/duke-hts-2018/bioinformatics/quality_scores.html
-* **download complete - data hygiene check in footnotes**
 
 ***
+**Compress dataset 1**
 
+```bash
+# dataset 1 compress with pigz
+[hpc6140@frnt152 hpc6140]$ nano compress_7marchGSE135337_j4p4
+[hpc6140@frnt152 hpc6140]$ sbatch compress_7marchGSE135337_j4p4
+
+# pigz - scale j to number of files, scale p to size of files
+#!/bin/bash
+#SBATCH --job-name=fast_compress
+#SBATCH --output=%x_%j.log
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=32G
+#SBATCH --time=02:00:00
+
+cd /global/scratch/$USER/7marchGSE135337
+
+# Load specific versions
+module load parallel
+module load pigz
+
+echo "Job started at: $(date)"
+
+# -j 4: Run 4 files at once
+# pigz -p 4: Each file uses 4 threads
+# pigz -k: KEEP the original .fastq files (do not delete)
+ls *.fastq | parallel -j 4 "pigz -p 4 -k {}"
+
+echo "Compression finished at: $(date)"
+
+# check compressed fastq.gz for errors
+pigz -t *.fastq.gz
+
+if [ $? -eq 0 ]; then
+    echo "SUCCESS: All compressed files passed the integrity test."
+else
+    echo "ERROR: One or more files failed the integrity test."
+fi`
+
+***
+```
+
+**check integrity of dataset 1 fastq.gz**
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=check_fastq
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=16G
+#SBATCH --time=24:00:00
+#SBATCH --output=check_fastq_%j.log
+#SBATCH --error=check_fastq_%j.err
+
+cd /global/scratch/$USER/7marchGSE135337 || exit
+
+errors=()
+
+# pigz test mode parallel 16
+for file in *.fastq.gz; do
+echo "Processing: $file"
+if ! pigz -t -p 16 "$file"; then
+echo "FAILED: $file"
+errors+=("$file")
+else
+echo "PASSED: $file"
+fi
+done
+
+if [ ${#errors[@]} -eq 0 ]; then
+echo "--------------------------"
+echo "Result: all good"
+else
+echo "--------------------------"
+echo "The following files are incomplete or corrupted:"
+printf '%s\n' "${errors[@]}"
+fi
+```
+* the problem with downloading SRAs and converting/gzipping by yourself is that the checksum of your own fastq gz would be different from the ENA database fastq gz even if the data is complete
+* due to differences in gzip ....
+* So if you go this route you can't use checksum match to verify your fastq gz integrity
+* check by other means
+
+```
 **Do the same for dataset 2: a larger cross platform dataset to test integration**
 
 Tran, M. A., Youssef, D., Shroff, S., Chowhan, D., Beaumont, K. G., Sebra, R., Mehrazin, R., Wiklund, P., Lin, J. J., Horowitz, A., Farkas, A. M., Galsky, M. D., Sfakianos, J. P., & Bhardwaj, N. (2024). Urine scRNAseq reveals new insights into the bladder tumor immune microenvironment. The Journal of experimental medicine, 221(8), e20240045. https://doi.org/10.1084/jem.20240045
